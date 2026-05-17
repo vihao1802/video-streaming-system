@@ -5,7 +5,7 @@ pydantic-settings
 python-dotenv
 sqlmodel
 psycopg2-binary
-redis
 minio
 python-multipart
 alembic
+requests

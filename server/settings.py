@@ -13,5 +13,6 @@ class Settings(BaseSettings):
     MINIO_RAW_VIDEO_BUCKET: str = ""
     MINIO_VIDEO_THUMBNAIL_BUCKET: str = ""
     MINIO_PREVIEW_IMAGE_ENDPOINT: str = ""
+    MINIO_PROCESS_VIDEO_BUCKET: str = ""
 
 settings = Settings()

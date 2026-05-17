@@ -7,6 +7,32 @@ This document explains how to set up and run the development environment using D
 - Docker (with Docker Compose)
 - Git (for version control)
 
+## Technologies Used
+
+This project leverages the following technologies:
+
+- **Frontend**:
+  - **React** - A JavaScript library for building user interfaces
+  - **Vite** - Next Generation Frontend Tooling for fast development
+  - **TypeScript** - Static type checking for JavaScript
+
+- **Backend**:
+  - **FastAPI** - Modern, fast (high-performance) web framework for building APIs
+  - **PostgreSQL** - Powerful, open-source object-relational database system
+  - **Redis** - In-memory data structure store, used for caching and message brokering
+  - **Alembic** - Database migration tool for SQLAlchemy
+
+- **Storage & Media Processing**:
+  - **MinIO** - High Performance Object Storage, S3 compatible
+  - **FFmpeg** - For video transcoding and processing
+
+- **Message Queue**:
+  - **Kafka** - Distributed event streaming platform for handling real-time data feeds
+
+- **Containerization & Orchestration**:
+  - **Docker** - Containerization platform
+  - **Docker Compose** - Tool for defining and running multi-container applications
+
 ## Getting Started
 
 1. **Clone the repository** (if you haven't already):
@@ -33,6 +59,40 @@ This document explains how to set up and run the development environment using D
   - Host: localhost
   - Port: 5432
   - Database: video_streaming
+
+## Database Migrations
+
+### Running Migrations
+
+1. **Apply pending migrations**:
+   ```bash
+   docker compose exec server alembic upgrade head
+   ```
+
+2. **Create a new migration**:
+   ```bash
+   docker compose exec server alembic revision --autogenerate -m "description of changes"
+   ```
+
+3. **View current migration status**:
+   ```bash
+   docker compose exec server alembic current
+   ```
+
+4. **Rollback to a previous migration**:
+   ```bash
+   docker compose exec server alembic downgrade -1  # rollback one migration
+   # or
+   docker compose exec server alembic downgrade <migration_id>
+   ```
+
+### Migration Best Practices
+
+- Always create a new migration when making schema changes
+- Test migrations in a development environment before applying to production
+- Keep migration files in version control
+- Write idempotent migrations that can be run multiple times safely
+- Include both `upgrade` and `downgrade` functions in each migration
   - Username: postgres
   - Password: postgres
 - **Redis**:
@@ -67,7 +127,6 @@ Create a `.env` file in the root directory with the following variables:
 ```env
 # Server
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/video_streaming
-REDIS_URL=redis://redis:6379/0
 MINIO_ENDPOINT=minio:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin

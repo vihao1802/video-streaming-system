@@ -5,6 +5,7 @@ import subprocess
 from botocore.client import Config
 from settings import settings
 from pathlib import Path
+from ffmpeg_presets import get_dash_transcode_preset, get_hls_transcode_preset
 
 class VideoTranscoder:
     def __init__(self):
@@ -22,147 +23,81 @@ class VideoTranscoder:
         print(f"Downloaded video to {download_path}")
 
     def transcode_video(self, input_path='input.mp4', output_dir='output'):
-        # DASH
-        command = [
-            "ffmpeg",
-            "-i",
-            input_path,
-            "-filter_complex",
-            "[0:v]split=3[v1][v2][v3];"
-            "[v1]scale=640:360:flags=fast_bilinear[360p];"
-            "[v2]scale=1280:720:flags=fast_bilinear[720p];"
-            "[v3]scale=1920:1080:flags=fast_bilinear[1080p]",
-            # 360p video stream
-            "-map",
-            "[360p]",
-            "-c:v:0",
-            "libx264",
-            "-b:v:0",
-            "1000k",
-            "-preset",
-            "veryfast",
-            "-profile:v",
-            "high",
-            "-level:v",
-            "4.1",
-            "-g",
-            "48",
-            "-keyint_min",
-            "48",
-            # 720p video stream
-            "-map",
-            "[720p]",
-            "-c:v:1",
-            "libx264",
-            "-b:v:1",
-            "4000k",
-            "-preset",
-            "veryfast",
-            "-profile:v",
-            "high",
-            "-level:v",
-            "4.1",
-            "-g",
-            "48",
-            "-keyint_min",
-            "48",
-            # 1080p video stream
-            "-map",
-            "[1080p]",
-            "-c:v:2",
-            "libx264",
-            "-b:v:2",
-            "8000k",
-            "-preset",
-            "veryfast",
-            "-profile:v",
-            "high",
-            "-level:v",
-            "4.1",
-            "-g",
-            "48",
-            "-keyint_min",
-            "48",
-            # Audio stream
-            "-map",
-            "0:a",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            # DASH specific settings
-            "-use_timeline",
-            "1",
-            "-use_template",
-            "1",
-            "-window_size",
-            "5",
-            "-adaptation_sets",
-            "id=0,streams=v id=1,streams=a",
-            "-f",
-            "dash",
-            f"{output_dir}/manifest.mpd",
-        ]
-        process = subprocess.run(command, check=True)
-        print(f"Video processed to DASH at {output_dir}")
-
-        if process.returncode != 0:
-            print(process.stderr)
-            raise Exception("Transcoding failed!")
-
-    def upload_processed_files(self, prefix, local_dir):
         try:
-            # Ensure the local directory exists
-            if not os.path.exists(local_dir):
-                print(f"Error: Local directory {local_dir} does not exist")
-                return
+            dash_command = get_dash_transcode_preset(input_path, str(output_dir))
+            subprocess.run(dash_command, check=True)
+            
+            hls_command = get_hls_transcode_preset(input_path, str(output_dir))
+            subprocess.run(hls_command, check=True)
 
-            # Ensure the bucket exists
-            bucket_exists = True
-            try:
-                self.s3.head_bucket(Bucket=settings.MINIO_PROCESS_VIDEO_BUCKET)
-                print(f"Bucket {settings.MINIO_PROCESS_VIDEO_BUCKET} exists")
-            except Exception as e:
-                if "404" in str(e):  # Bucket doesn't exist
-                    bucket_exists = False
-                    print(f"Bucket {settings.MINIO_PROCESS_VIDEO_BUCKET} does not exist, creating...")
-                else:
-                    print(f"Error checking bucket {settings.MINIO_PROCESS_VIDEO_BUCKET}: {e}")
-                    raise
+            print(f"Video processed to DASH and HLS at {output_dir}")
 
-            if not bucket_exists:
-                try:
-                    # For MinIO, we need to use make_bucket instead of create_bucket
-                    self.s3.create_bucket(Bucket=settings.MINIO_PROCESS_VIDEO_BUCKET)
-                    print(f"Successfully created bucket: {settings.MINIO_PROCESS_VIDEO_BUCKET}")
-                except Exception as create_error:
-                    print(f"Failed to create bucket {settings.MINIO_PROCESS_VIDEO_BUCKET}: {create_error}")
-                    return
+        except subprocess.CalledProcessError as e:
+            print(f"Error during transcoding: {e}")
+            raise
 
-            # Upload files
+    def upload_processed_files(self, prefix: str, local_dir: str) -> None:
+        """
+        Upload processed files from local directory to S3 bucket.
+        
+        Args:
+            prefix: S3 key prefix for the uploaded files
+            local_dir: Local directory containing files to upload
+            
+        Raises:
+            FileNotFoundError: If local directory doesn't exist
+            Exception: For other S3-related errors
+        """
+        try:
+            self._ensure_local_dir_exists(local_dir)
+            self._ensure_bucket_exists(settings.MINIO_PROCESS_VIDEO_BUCKET)
+            
+            # Upload all files in the directory
             for root, _, files in os.walk(local_dir):
                 for file in files:
-                    try:
-                        local_path = os.path.join(root, file)
-                        relative_path = os.path.relpath(local_path, local_dir)
-                        s3_key = f"{prefix}/{relative_path}"
-                        
-                        print(f"Uploading {local_path} to s3://{settings.MINIO_PROCESS_VIDEO_BUCKET}/{s3_key}")
-                        
-                        self.s3.upload_file(
-                            local_path,
-                            settings.MINIO_PROCESS_VIDEO_BUCKET,
-                            s3_key
-                        )
-                        print(f"Successfully uploaded {s3_key}")
-                        
-                    except Exception as file_error:
-                        print(f"Error uploading {file}: {file_error}")
-                        continue  # Continue with next file if one fails
-                        
+                    local_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(local_path, local_dir)
+                    s3_key = f"{prefix}/{relative_path}"
+                    self._upload_file_to_s3(local_path, settings.MINIO_PROCESS_VIDEO_BUCKET, s3_key)
+                    
         except Exception as e:
-            print(f"Unexpected error in upload_processed_files: {e}")
+            print(f"Error in upload_processed_files: {e}")
             raise
+
+    def _ensure_local_dir_exists(self, local_dir: str) -> None:
+        """Verify that the local directory exists."""
+        if not os.path.exists(local_dir):
+            raise FileNotFoundError(f"Local directory {local_dir} does not exist")
+
+    def _ensure_bucket_exists(self, bucket_name: str) -> None:
+        """Ensure the specified bucket exists, create it if it doesn't."""
+        try:
+            self.s3.head_bucket(Bucket=bucket_name)
+            print(f"Bucket {bucket_name} exists")
+            return
+            
+        except Exception as e:
+            if "404" not in str(e):
+                print(f"Error checking bucket {bucket_name}: {e}")
+                raise
+                
+        print(f"Bucket {bucket_name} does not exist, creating...")
+        try:
+            self.s3.create_bucket(Bucket=bucket_name)
+            print(f"Successfully created bucket: {bucket_name}")
+        except Exception as e:
+            print(f"Failed to create bucket {bucket_name}: {e}")
+            raise
+
+    def _upload_file_to_s3(self, local_path: str, bucket_name: str, s3_key: str) -> bool:
+        try:
+            print(f"Uploading {local_path} to s3://{bucket_name}/{s3_key}")
+            self.s3.upload_file(local_path, bucket_name, s3_key)
+            print(f"Successfully uploaded {s3_key}")
+            return True
+        except Exception as e:
+            print(f"Error uploading {os.path.basename(local_path)}: {e}")
+            return False
 
     def update_video_status(self, url, object_key):
         try:
@@ -173,18 +108,25 @@ class VideoTranscoder:
         except requests.RequestException as e:
             print(f"Failed to notify status: {e}")
 
-    def process_video(self, object_key):
+    def process_video(self, object_key, bucket_name=None):
         work_dir = Path("/tmp/workspace")
         work_dir.mkdir(exist_ok=True)
         input_path = work_dir / "input.mp4"
         output_path = work_dir / "output"
         output_path.mkdir(exist_ok=True)
 
-        print("Processing video: ", object_key)
+        print(f"Processing video: {object_key} from bucket: {bucket_name}")
 
         try:
+            # Extract video_id from object_key (e.g., 'videos/uuid.mp4' -> 'uuid')
+            import os
+            base_name = os.path.basename(object_key)
+            video_id = os.path.splitext(base_name)[0]
+
+            # Use provided bucket_name or fall back to settings
+            bucket_to_use = bucket_name or settings.MINIO_RAW_VIDEO_BUCKET
             self.download_video(
-                bucket_name=settings.MINIO_RAW_VIDEO_BUCKET,
+                bucket_name=bucket_to_use,
                 object_key=object_key,
                 download_path=input_path
             )
@@ -193,12 +135,12 @@ class VideoTranscoder:
                 output_dir=output_path
             )
             self.upload_processed_files(
-                prefix=object_key,
+                prefix=video_id,
                 local_dir=output_path
             )
             self.update_video_status(
                 url=settings.SERVER_URL,
-                object_key=object_key
+                object_key=video_id
             )
 
         finally:

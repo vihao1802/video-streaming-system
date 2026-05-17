@@ -76,7 +76,11 @@ async def upload_file_directly(
         # Decide bucket and object key prefix based on flag
         bucket = settings.MINIO_RAW_VIDEO_BUCKET if isVideo else settings.MINIO_VIDEO_THUMBNAIL_BUCKET
         prefix = "videos" if isVideo else "thumbnails"
-        object_id = thumbnail_id.replace("videos","thumbnails") if thumbnail_id else f"{prefix}/{uuid.uuid4()}"
+        
+        # We want to return and use just the UUID. 
+        # If it's the thumbnail upload, thumbnail_id is the UUID returned by the first upload.
+        object_uuid = thumbnail_id if thumbnail_id else str(uuid.uuid4())
+        object_key = f"{prefix}/{object_uuid}"
 
         # Ensure bucket exists
         if not minio_client.bucket_exists(bucket):
@@ -85,14 +89,14 @@ async def upload_file_directly(
         # Read the file into memory. For large files consider streaming.
         minio_client.put_object(
             bucket,
-            object_id,
+            object_key,
             file.file,
             length=-1,
             content_type=file.content_type or "application/octet-stream",
             part_size=10*1024*1024,
         )
 
-        return {"message": "Upload successful", "object_id": object_id}
+        return {"message": "Upload successful", "object_id": object_uuid}
     except Exception as e:
         logging.error(e)
         raise HTTPException(status_code=500, detail="Upload failed")

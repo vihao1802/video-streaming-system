@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import upload
+from routes import upload, video
 from database.engine import get_db
+import os
 
 app = FastAPI(
     title="Video Streaming System",
@@ -11,6 +12,8 @@ app = FastAPI(
 
 origins = [
     "http://localhost:3000",
+    "http://localhost:3001",
+    "http://0.0.0.0:3001"
 ]
 
 app.add_middleware(
@@ -22,10 +25,11 @@ app.add_middleware(
 )
 
 app.include_router(upload.router)
+app.include_router(video.router)
 
 @app.get("/")
 def root():
     return {
         "message": "Welcome to Video Streaming System",
-        "docs": "http://127.0.0.1:8000/docs",
+        "docs": f"http://127.0.0.1:{os.getenv('PORT') or 8000}/docs",
     }

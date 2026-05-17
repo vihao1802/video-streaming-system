@@ -9,9 +9,9 @@ class Response(BaseModel, Generic[T]):
     message: Optional[str]
 
     @classmethod
-    def success(cls, data: Optional[T] = None, message: Optional[str] = None) -> "Response[T]":
+    def success(cls, message: Optional[str] = None, data: Optional[T] = None) -> "Response[T]":
         return cls(success=True, data=data, message=message)
 
     @classmethod
     def error(cls, message: Optional[str] = None) -> "Response[None]":
-        return cls(success=False,  message=message)
+        return cls(success=False, data=None, message=message)

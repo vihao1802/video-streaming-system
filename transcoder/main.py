@@ -63,17 +63,22 @@ def process_message(message):
             logger.warning("No Records found in message")
             return
             
-        raw_key = records[0].get('s3', {}).get('object', {}).get('key')
+        s3_info = records[0].get('s3', {})
+        bucket_name = s3_info.get('bucket', {}).get('name')
+        raw_key = s3_info.get('object', {}).get('key')
+        
         if not raw_key:
             logger.warning("No object key found in message")
             return
             
-        object_key = get_url_decoded(raw_key)
-        logger.info(f"Processing video: {object_key}")
+        # Decode URL-encoded characters
+        import urllib.parse
+        object_key = urllib.parse.unquote_plus(raw_key)
+        logger.info(f"Processing video: {object_key} from bucket: {bucket_name}")
         
         # Process the video
         processor = VideoTranscoder()
-        processor.process_video(object_key=object_key)
+        processor.process_video(object_key=object_key, bucket_name=bucket_name)
         
         logger.info(f"Successfully processed video: {object_key}")
         
