@@ -149,14 +149,6 @@ export const VideoPlayer = ({
       }
     };
 
-    // const handleRateChange = () => {
-    //   if (!isAttachedRef.current) return;
-    //   // Force playback rate to stay at 1.0
-    //   if (video.playbackRate !== 1.0) {
-    //     video.playbackRate = 1.0;
-    //   }
-    // };
-
     video.addEventListener("play", handlePlay);
     video.addEventListener("pause", handlePause);
     video.addEventListener("timeupdate", handleTimeUpdate);
@@ -167,7 +159,6 @@ export const VideoPlayer = ({
     video.addEventListener("stalled", handleStalled);
     video.addEventListener("suspend", handleSuspend);
     video.addEventListener("progress", handleProgress);
-    // video.addEventListener("ratechange", handleRateChange);
 
     let player: MediaPlayerClass | null = null;
 
@@ -196,11 +187,12 @@ export const VideoPlayer = ({
         streaming: {
           abr: {
             autoSwitchBitrate: { video: true },
+            // Seed bandwidth estimate so DASH.js starts at highest quality
+            // instead of ramping up from lowest on the first segment
+            initialBitrate: { video: 5000 },
           },
           buffer: {
-            // Pre-buffer 5s before starting (reduced from 20s for faster startup)
             initialBufferLevel: 1.5,
-            // Keep 30s stable buffer at top quality (increased from 30s for stability)
             bufferTimeAtTopQuality: 8,
             bufferTimeAtTopQualityLongForm: 20,
             // Enable fast switch for smoother quality transitions
@@ -258,7 +250,6 @@ export const VideoPlayer = ({
       video.removeEventListener("stalled", handleStalled);
       video.removeEventListener("suspend", handleSuspend);
       video.removeEventListener("progress", handleProgress);
-      // video.removeEventListener("ratechange", handleRateChange);
 
       // Clean up timers and animation frame
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -392,13 +383,13 @@ export const VideoPlayer = ({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // Map bitrate ranges to resolution labels matching encode targets:
+  // 360p → ~500k, 720p → ~1500k, 1080p → ~3000k
   const getQualityLabel = (bitrate: number) => {
     const kbps = bitrate / 1000;
-    if (kbps < 1000) return `${Math.round(kbps)}p`;
-    if (kbps >= 800 && kbps < 1500) return "360p";
-    if (kbps >= 1500 && kbps < 3000) return "720p";
-    if (kbps >= 3000) return "1080p";
-    return `${Math.round(kbps)}kbps`;
+    if (kbps <= 800) return "360p";
+    if (kbps <= 2000) return "720p";
+    return "1080p";
   };
 
   return (
@@ -406,7 +397,7 @@ export const VideoPlayer = ({
       ref={containerRef}
       className="relative w-full bg-black rounded-lg overflow-hidden shadow-2xl"
       onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={() => setShowControls(isPlaying ? false : true)}
+      onMouseLeave={() => setShowControls(!isPlaying)}
     >
       {/* Video Element */}
       <video
